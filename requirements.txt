@@ -1,0 +1,8 @@
+tensorflow==2.4.0
+numpy
+packaging
+pandas
+seaborn
+sklearn
+matplotlib
+joblib
