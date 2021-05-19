@@ -4,21 +4,18 @@ import os
 import time
 import tensorflow as tf
 from packaging import version
-from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
+from confusion_matrix_cbk import ConfusionMatrix
+from misc import make_dir
 
 
-def keras_callbacks():
+def keras_callbacks(model_dir, model, X_val, y_val):
     """ A method to create lightweight Keras callbacks for training """
 
-    #TODO: add early stopping too
+    # early stopping
+    es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=100)
 
-    # model dir to save model with timestamp
-    time_str = time.strftime("model_%Y%m%d_%H%M%S")
-    model_basedir = 'saved_model'
-    model_dir = os.path.join(model_basedir, time_str)
-    make_dir(model_basedir)
-    make_dir(model_dir)
-    # TF2 uses accuracy instead of acc
+    # Model Checkpoint for weights only. Note: TF2 uses accuracy instead of acc
     if version.parse(tf.__version__) < version.parse('2.0.0'):
         monitor = 'val_acc'
         model_filepath = os.path.join(model_dir,
@@ -29,17 +26,18 @@ def keras_callbacks():
                                     'epoch-{epoch:02d}_valacc-{val_accuracy:.6f}.hdf5') 
     checkpoint = ModelCheckpoint(model_filepath, monitor=monitor, verbose=1, save_best_only=True, mode='max')
 
-    # TensorBoard logs in same model_dir
+    # TensorBoard logs
     log_dir = os.path.join(model_dir, 'logs')
     make_dir(log_dir)
     tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
-    callbacks = [checkpoint, tensorboard_callback]
+    # TensorBoard Confusion matrix callback
+    file_writer_cm = tf.summary.create_file_writer(os.path.join(log_dir, 'confusion_matrix'))
+    cm_callback_class = ConfusionMatrix(model, file_writer_cm, X_val, y_val)
+    cm_callback = cm_callback_class.confusion_matrix_callback
 
-    return model_dir, callbacks
+    callbacks = [checkpoint, tensorboard_callback, cm_callback]
+
+    return callbacks
 
 
-def make_dir(dirname):
-    """ A method to create a dir if it does not already exist """
-    if not os.path.isdir(dirname):
-        os.makedirs(dirname, exist_ok=True)

@@ -1,4 +1,5 @@
 import os
+import time
 import tensorflow as tf
 from tensorflow.keras.utils import to_categorical
 from model import create_model, get_model_task
@@ -11,6 +12,8 @@ from visualize_results import visualize_results
 from visualize_model import visualize_model
 import joblib
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from misc import make_dir
 
 
 def main(args):
@@ -37,6 +40,13 @@ def main(args):
     loss = args.loss
     normalize_features = args.normalize_features
 
+    # model dir to save model with timestamp
+    time_str = time.strftime("model_%Y%m%d_%H%M%S")
+    model_basedir = 'saved_model'
+    model_dir = os.path.join(model_basedir, time_str)
+    make_dir(model_basedir)
+    make_dir(model_dir)
+
     # load data (MNIST) - seems to be (n_samples, 28, 28) this time
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data(path='./mnist.npz')
     _, a, b = x_train.shape
@@ -49,9 +59,6 @@ def main(args):
     y_train = to_categorical(y_train, num_classes)
     y_test = to_categorical(y_test, num_classes)
 
-    # generate Keras callbacks and timestamped model_dir
-    model_dir, callbacks = keras_callbacks()
-
     # normalize the feature data
     if normalize_features:
         assert len(x_train.shape) <= 2, "Dim too large"
@@ -60,6 +67,10 @@ def main(args):
         x_train = min_max_scaler.fit_transform(x_train)
         x_test = min_max_scaler.transform(x_test)
         joblib.dump(min_max_scaler, os.path.join(model_dir, 'scaler.save'))
+
+    # Split the data
+    print('Splitting training from validation data...')
+    x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=1-train_fraction, shuffle= True)
 
     # buid model
     model = create_model(input_shape=input_shape, num_classes=num_classes)
@@ -73,10 +84,13 @@ def main(args):
     optimizer = Adam(lr=lr)
     model.compile(loss=loss, optimizer=optimizer, metrics=metrics)
 
+    # generate Keras callbacks and timestamped model_dir
+    callbacks = keras_callbacks(model_dir, model, x_val, y_val)
+
     # train model
     print('Training model...')
     model.fit(x_train, y_train, epochs=n_epochs, batch_size=batch_size, verbose=1,
-            shuffle=True, validation_split=train_fraction, callbacks=callbacks)
+            shuffle=True, validation_data=(x_val, y_val), callbacks=callbacks)
     print('Model training complete.')
 
     # evaluate model
